@@ -1,0 +1,74 @@
+=========================================================
+PROJECT SPECIFICATION: LazyMise
+=========================================================
+Author       : Mochammad Tora Sifa
+Methodology  : Prototype / Iterative (V1 -> V2 -> V3)
+Tech Stack   : Golang, Bubble Tea (TUI), Go TOML Parser, os/exec
+Description  : A lazygit-inspired Terminal User Interface (TUI) for the mise-en-place (mise) polyglot version manager. Built to minimize friction when switching/adding language versions without leaving the terminal or manually editing TOML files.
+
+=========================================================
+CORE PHILOSOPHY (The Golden Rules)
+=========================================================
+1. NO STAGING AREA: Changes are Auto-Saved to the .mise.toml file instantly. We don't want users losing config changes if they accidentally close the app.
+2. INSTANT WRITE, BACKGROUND EXECUTE: When a user selects a tool, write to the TOML file immediately (1ms). The actual `mise install` download MUST happen in the background using Go Goroutines so it doesn't freeze the UI.
+3. CONTEXT AWARE: The app must know if it's in a project folder (Local .mise.toml) or home directory (Global ~/.mise.toml) and act accordingly.
+4. SAFETY vs SPEED: Use pop-ups for safety, but provide power-user shortcuts to bypass them.
+
+=========================================================
+ARCHITECTURE & DATA FLOW
+=========================================================
+1. INIT: App starts -> Detects Context (Global vs Local) -> Parses .mise.toml into a Go Struct.
+2. RENDER: Bubble Tea reads the Go Struct -> Draws the UI list.
+3. INTERACT: User presses keys -> App updates the Go Struct in memory -> App instantly writes struct to .mise.toml file -> App spawns `go exec.Command("mise", "install")` in background -> UI updates status to [Installing...].
+4. EXIT: User presses 'q' -> App terminates. (If downloads are running, they continue in the OS background because we used Goroutines, not attached processes).
+
+=========================================================
+KEYBINDINGS SPEC
+=========================================================
+[Global Navigation]
+- Up/k    : Move up
+- Down/j  : Move down
+- q       : Quit/Go back
+
+[Main Dashboard View (Tool List)]
+- Enter   : Open Version Picker (V2). For V1, just prompt for version string.
+- a       : Add a new tool (Auto-saves to TOML).
+- d       : Delete selected tool (Auto-saves to TOML).
+- x       : Force run `mise install` for everything manually.
+- e       : Open Environment Variables panel (V3).
+
+[Version Picker View (V2)]
+- Enter       : Select version. If not downloaded -> Y/N Pop-up -> Download in background.
+- Shift+Enter : Select version -> FORCE download instantly (No pop-up).
+- /           : Search/Filter available versions.
+- Esc         : Go back to Dashboard.
+
+=========================================================
+THE PROTOTYPING ROADMAP (The Cliffs)
+=========================================================
+
+--- V1: THE "KILL VS CODE" PROTOTYPE (Build this first) ---
+Goal: Prove we can read/write TOML and render a list.
+- [x] Initialize Go module and Bubble Tea boilerplate.
+- [ ] Write logic to find Local or Global .mise.toml.
+- [ ] Parse the TOML file into a Go struct.
+- [ ] Render a simple list of current tools (e.g., "python 3.11").
+- [ ] Implement 'a' (Add) key: Prompt user for tool name & version string -> Write to TOML struct -> Write to file.
+- [ ] Implement 'd' (Delete) key: Remove from struct -> Write to file.
+- [ ] NO DOWNLOAD YET. Just edit the file.
+
+--- V2: THE "BACKGROUND MAGIC" UPGRADE ---
+Goal: Add actual mise integration without freezing the UI.
+- [ ] After adding/editing a tool, trigger `exec.Command("mise", "install")` inside a Go routine (`go func()...`).
+- [ ] Update UI to show `[Downloading...]` next to the tool.
+- [ ] Implement the Version Picker: Run `mise ls-remote <tool>` via exec, capture stdout, show in a new Bubble Tea view.
+- [ ] Implement Enter (Y/N pop-up) vs Shift+Enter (Force download).
+
+--- V3: THE "POLISH" UPGRADE ---
+Goal: Make it feel like a premium app.
+- [ ] Add `/` search filtering in the Version Picker.
+- [ ] Add the 'e' Environment Variables panel (Read/Write `[env]` section in TOML).
+- [ ] Add error handling UI (If mise install fails, show the error log in a small panel instead of crashing).
+- [ ] Handle TOML formatting (Try not to delete user comments when rewriting the file).
+
+======================================================== 
