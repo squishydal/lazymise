@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/BurntSushi/toml"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type MiseConfig struct {
+	Tools map[string]string `toml:"tools"`
+}
+
 type model struct {
-	counter     int
-	text        string
-	fileContent string
+	counter int
+	tools   map[string]string
 }
 
 func check(e error) {
@@ -19,19 +23,21 @@ func check(e error) {
 	}
 }
 
-func readFiles() string {
+func readFiles() []byte {
 	path := "/home/squishydal/Projects/lazymise/mise.toml"
 	dat, err := os.ReadFile(path)
 	check(err)
-	return string(dat)
+	return dat
 }
 
 func initialModel() model {
-	content := readFiles()
+	rawFile := readFiles()
+	var config MiseConfig
+	err := toml.Unmarshal(rawFile, &config)
+	check(err)
 	return model{
-		counter:     0,
-		text:        "",
-		fileContent: content,
+		counter: 0,
+		tools:   config.Tools,
 	}
 }
 
@@ -54,11 +60,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// 4. VIEW: Render the UI as a string
 func (m model) View() string {
 	s := fmt.Sprintf("Counter: %d\n\n", m.counter)
-	s += fmt.Sprintf("File contect: \n%s\n\n", m.fileContent)
-	s += "Press up/down to change, q to quit."
+	s += "Your Tools:\n\n"
+	for toolName, version := range m.tools {
+		s += fmt.Sprintf("  -> %s: %s\n", toolName, version)
+	}
+	s += "\nPress up/down to change, q to quit."
 	return s
 }
 

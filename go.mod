@@ -2,7 +2,10 @@ module github.com/squishydal/lazymise
 
 go 1.26.2
 
-require github.com/charmbracelet/bubbletea v1.3.10
+require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/charmbracelet/bubbletea v1.3.10
+)
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

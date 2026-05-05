@@ -50,8 +50,8 @@ THE PROTOTYPING ROADMAP (The Cliffs)
 --- V1: THE "KILL VS CODE" PROTOTYPE (Build this first) ---
 Goal: Prove we can read/write TOML and render a list.
 - [x] Initialize Go module and Bubble Tea boilerplate.
-- [ ] Write logic to find Local or Global .mise.toml.
-- [ ] Parse the TOML file into a Go struct.
+- [x] Write logic to find Local or Global .mise.toml. (Baru Local nya doang mana belu di parsing ke json)
+- [x] Parse the TOML file into a Go struct.
 - [ ] Render a simple list of current tools (e.g., "python 3.11").
 - [ ] Implement 'a' (Add) key: Prompt user for tool name & version string -> Write to TOML struct -> Write to file.
 - [ ] Implement 'd' (Delete) key: Remove from struct -> Write to file.
