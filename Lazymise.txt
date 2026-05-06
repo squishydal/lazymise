@@ -53,9 +53,9 @@ Goal: Prove we can read/write TOML and render a list.
 - [x] Write logic to find Local or Global .mise.toml. (Baru Local nya doang mana belu di parsing ke json)
 - [x] Parse the TOML file into a Go struct.
 - [x] Render a simple list of current tools (e.g., "python 3.11").
-- [ ] Implement 'a' (Add) key: Prompt user for tool name & version string -> Write to TOML struct -> Write to file.
-- [ ] Implement 'd' (Delete) key: Remove from struct -> Write to file.
-- [ ] NO DOWNLOAD YET. Just edit the file.
+- [x] Implement 'a' (Add) key: Prompt user for tool name & version string -> Write to TOML struct -> Write to file.
+- [x] Implement 'd' (Delete) key: Remove from struct -> Write to file.
+- [x] NO DOWNLOAD YET. Just edit the file.
 
 --- V2: THE "BACKGROUND MAGIC" UPGRADE ---
 Goal: Add actual mise integration without freezing the UI.
