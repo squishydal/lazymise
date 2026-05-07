@@ -81,6 +81,10 @@ var (
 	styleConfirmN = lipgloss.NewStyle().
 			Foreground(colRed).
 			Bold(true)
+
+	styleDanger = lipgloss.NewStyle().
+			Foreground(colRed).
+			Bold(true)
 )
 
 // panelBorder returns a styled box around content.
@@ -97,7 +101,6 @@ func panelBorder(title, content string, width int) string {
 
 	box := style.Render(content)
 	if title != "" {
-		// Overlay title into top border
 		titleStr := " " + styleTitle.Render(title) + " "
 		box = strings.Replace(box, "╭──", "╭"+titleStr, 1)
 	}
@@ -108,16 +111,11 @@ func panelBorder(title, content string, width int) string {
 
 func (m model) View() string {
 	switch m.state {
-	case stateAddName:
-		return m.renderInputScreen(
-			"Add Tool  [1/2]",
-			"Tool name",
-			"e.g. node, python, go, rust",
-			"",
-		)
+	case stateToolBrowser:
+		return m.renderToolBrowser()
 	case stateAddVersion:
 		return m.renderInputScreen(
-			"Add Tool  [2/2]",
+			"Add Tool — version",
 			"Version",
 			"e.g. 20.11.0, latest — press Enter for latest",
 			styleSubtitle.Render("tool  ")+styleTitle.Render(m.newToolName),
@@ -126,11 +124,13 @@ func (m model) View() string {
 		return m.renderVersionPicker()
 	case stateConfirmDownload:
 		return m.renderConfirm()
+	case stateConfirmDelete:
+		return m.renderConfirmDelete()
 	}
 	return m.renderDashboard()
 }
 
-// ── Dashboard (main list + detail sidebar) ────────────────────────────────────
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 
 func (m model) renderDashboard() string {
 	totalW := m.width
@@ -160,13 +160,18 @@ func (m model) renderHeader(width int) string {
 	if localLabel == "" {
 		localLabel = "(none)"
 	}
-	info := styleSubtitle.Render("local: "+localLabel+"   global: "+m.globalPath)
+	info := styleSubtitle.Render("local: " + localLabel + "   global: " + m.globalPath)
 
 	gap := width - lipgloss.Width(logo) - lipgloss.Width(info) - 2
 	if gap < 1 {
 		gap = 1
 	}
-	return logo + strings.Repeat(" ", gap) + info
+
+	header := logo + strings.Repeat(" ", gap) + info
+	if m.initErr != "" {
+		header += "\n" + styleStatusErr.Render("  ⚠  "+m.initErr)
+	}
+	return header
 }
 
 func (m model) renderToolList(width int) string {
@@ -178,7 +183,6 @@ func (m model) renderToolList(width int) string {
 	var lines []string
 	lastSource := toolSource(-1)
 
-	// Windowed scroll
 	start := m.cursor - visibleRows/2
 	if start < 0 {
 		start = 0
@@ -199,7 +203,6 @@ func (m model) renderToolList(width int) string {
 	for i := start; i < end; i++ {
 		e := m.entries[i]
 
-		// Section divider
 		if e.source != lastSource {
 			label := "LOCAL"
 			if e.source == sourceGlobal {
@@ -229,7 +232,8 @@ func (m model) renderToolList(width int) string {
 
 		spin := ""
 		if m.installingTools[e.name] {
-			spin = "  " + styleInstalling.Render("⟳ installing…")
+			frame := spinFrames[m.spinFrame]
+			spin = "  " + styleInstalling.Render(frame+" installing…")
 		}
 
 		row := arrow + nameStyle.Render(e.name) + "  " + ver + spin
@@ -263,7 +267,8 @@ func (m model) renderDetailPanel(width int) string {
 
 	installing := ""
 	if m.installingTools[e.name] {
-		installing = "\n\n" + styleInstalling.Render("  ⟳  mise install running in background…")
+		frame := spinFrames[m.spinFrame]
+		installing = "\n\n" + styleInstalling.Render("  "+frame+"  mise install running in background…")
 	}
 
 	content := fmt.Sprintf(
@@ -294,7 +299,9 @@ func (m model) renderStatus(width int) string {
 func (m model) renderFooter(width int) string {
 	bindings := []struct{ key, desc string }{
 		{"↑/k ↓/j", "navigate"},
+		{"g/G", "top/bottom"},
 		{"Enter", "versions"},
+		{"e", "edit"},
 		{"a", "add"},
 		{"d", "delete"},
 		{"x", "install all"},
@@ -329,12 +336,182 @@ func (m model) renderInputScreen(title, label, hint, extra string) string {
 
 	box := panelBorder(title, content, 60)
 
-	// Centre vertically
 	topPad := (m.height - strings.Count(box, "\n") - 4) / 2
 	if topPad < 0 {
 		topPad = 0
 	}
 	return strings.Repeat("\n", topPad) + box
+}
+
+// ── Tool browser ──────────────────────────────────────────────────────────────
+
+func (m model) renderToolBrowser() string {
+	totalW := m.width
+	if totalW < 40 {
+		totalW = 40
+	}
+	listW := totalW * 52 / 100
+	detailW := totalW - listW - 1
+
+	visibleRows := m.height - 10
+	if visibleRows < 3 {
+		visibleRows = 3
+	}
+
+	// ── Left: tool list ──────────────────────────────────────────────────────
+	var listLines []string
+
+	// Search bar — always shown at the top.
+	searchLabel := styleSubtitle.Render("/")
+	searchText := styleInput.Render(m.searchBuffer)
+	caret := styleCursor.Render("█")
+	countStr := ""
+	if !m.loadingRegistry {
+		countStr = styleSubtitle.Render(fmt.Sprintf("  %d tools", len(m.filteredTools)))
+	}
+	listLines = append(listLines, " "+searchLabel+searchText+caret+countStr)
+	listLines = append(listLines, styleSubtitle.Render(strings.Repeat("─", listW-4)))
+
+	if m.loadingRegistry {
+		frame := spinFrames[m.spinFrame]
+		listLines = append(listLines, "  "+styleInstalling.Render(frame+"  Loading registry…"))
+	} else if len(m.filteredTools) == 0 {
+		listLines = append(listLines, "  "+styleGlobal.Render("No tools match \""+m.searchBuffer+"\""))
+	} else {
+		start := m.browserCursor - visibleRows/2
+		if start < 0 {
+			start = 0
+		}
+		end := start + visibleRows
+		if end > len(m.filteredTools) {
+			end = len(m.filteredTools)
+			start = end - visibleRows
+			if start < 0 {
+				start = 0
+			}
+		}
+		for i := start; i < end; i++ {
+			t := m.filteredTools[i]
+			selected := i == m.browserCursor
+
+			nameW := 20
+			nameStyle := lipgloss.NewStyle().Foreground(colWhite).Width(nameW)
+			arrow := "  "
+			if selected {
+				arrow = styleCursor.Render("▶ ")
+				nameStyle = nameStyle.Foreground(colGreen).Bold(true)
+			}
+
+			// Show a short excerpt of the description inline so eyes don't
+			// have to travel to the right panel for every entry.
+			shortDesc := t.desc
+			maxInline := listW - nameW - 8
+			if len(shortDesc) > maxInline && maxInline > 3 {
+				shortDesc = shortDesc[:maxInline-1] + "…"
+			}
+
+			row := arrow + nameStyle.Render(t.name) + "  " + styleGlobal.Render(shortDesc)
+			if selected {
+				row = lipgloss.NewStyle().
+					Background(colSel).
+					Width(listW - 4).
+					Render(row)
+			}
+			listLines = append(listLines, "  "+row)
+		}
+
+		// Progress counter.
+		listLines = append(listLines, "")
+		listLines = append(listLines, styleSubtitle.Render(
+			fmt.Sprintf("  %d / %d", m.browserCursor+1, len(m.filteredTools)),
+		))
+	}
+
+	leftPanel := panelBorder("Add Tool — registry", strings.Join(listLines, "\n"), listW)
+
+	// ── Right: detail panel ──────────────────────────────────────────────────
+	var detail string
+	if m.loadingRegistry {
+		detail = styleGlobal.Render("  Loading…")
+	} else if len(m.filteredTools) == 0 {
+		detail = styleGlobal.Render("  No results")
+	} else {
+		t := m.filteredTools[m.browserCursor]
+
+		// Already installed badge.
+		installedBadge := ""
+		if _, ok := m.localTools[t.name]; ok {
+			installedBadge = "  " + styleStatusOK.Render("● installed locally")
+		} else if _, ok := m.globalTools[t.name]; ok {
+			installedBadge = "  " + styleGlobal.Render("● installed globally")
+		}
+
+		descBlock := t.desc
+		if descBlock == "" {
+			descBlock = styleGlobal.Italic(true).Render("No description available.")
+		} else {
+			// Wrap description text to panel width.
+			descBlock = wrapText(descBlock, detailW-6)
+		}
+
+		detail = fmt.Sprintf(
+			"%s\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s",
+			styleSubtitle.Render("name"),
+			"  "+styleTitle.Render(t.name),
+			installedBadge,
+			styleSubtitle.Render("registry"),
+			"  "+styleVersion.Render(t.full),
+			styleSubtitle.Render("description"),
+			"  "+descBlock,
+			styleSubtitle.Render("tip"),
+			styleGlobal.Render("  Enter → pick version\n  Type to filter · Esc clear/back"),
+		)
+	}
+
+	rightPanel := panelBorder("Detail", detail, detailW)
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, " ", rightPanel)
+	footer := m.renderFooterBrowser(totalW)
+	return body + "\n" + footer
+}
+
+func (m model) renderFooterBrowser(width int) string {
+	bindings := []struct{ key, desc string }{
+		{"↑/k ↓/j", "navigate"},
+		{"g/G", "top/bottom"},
+		{"type", "filter"},
+		{"Enter", "select"},
+		{"Esc", "clear/back"},
+	}
+	var parts []string
+	for _, b := range bindings {
+		parts = append(parts, styleKey.Render(b.key)+" "+styleKeyDesc.Render(b.desc))
+	}
+	return "  " + strings.Join(parts, styleSubtitle.Render("  ·  "))
+}
+
+// wrapText wraps s to at most width runes per line.
+func wrapText(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	words := strings.Fields(s)
+	var lines []string
+	line := ""
+	for _, w := range words {
+		if line == "" {
+			line = w
+		} else if len(line)+1+len(w) <= width {
+			line += " " + w
+		} else {
+			lines = append(lines, line)
+			line = w
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n  ")
 }
 
 // ── Version picker ────────────────────────────────────────────────────────────
@@ -347,7 +524,6 @@ func (m model) renderVersionPicker() string {
 	listW := totalW * 55 / 100
 	infoW := totalW - listW - 1
 
-	// Left: version list
 	visibleRows := m.height - 8
 	if visibleRows < 3 {
 		visibleRows = 3
@@ -356,7 +532,8 @@ func (m model) renderVersionPicker() string {
 	var listLines []string
 
 	if m.loadingVersions {
-		listLines = append(listLines, "  "+styleInstalling.Render("⟳  Fetching versions…"))
+		frame := spinFrames[m.spinFrame]
+		listLines = append(listLines, "  "+styleInstalling.Render(frame+"  Fetching versions…"))
 	} else if len(m.versionList) == 0 {
 		listLines = append(listLines, "  "+styleGlobal.Render("No versions found."))
 	} else {
@@ -398,7 +575,6 @@ func (m model) renderVersionPicker() string {
 		listW,
 	)
 
-	// Right: info panel
 	infoContent := styleSubtitle.Render("tool") + "\n" +
 		"  " + styleTitle.Render(m.pendingTool) + "\n\n"
 
@@ -407,8 +583,14 @@ func (m model) renderVersionPicker() string {
 			"  " + styleVersion.Render(m.versionList[m.versionCursor]) + "\n\n"
 	}
 
+	cached := ""
+	if _, ok := m.versionCache[m.pendingTool]; ok && !m.loadingVersions {
+		cached = styleGlobal.Render("  (cached)") + "\n\n"
+	}
+
+	infoContent += cached
 	infoContent += styleSubtitle.Render("tip") + "\n" +
-		styleGlobal.Render("  Enter     confirm + prompt\n  S+Enter   force install\n  Esc/q     go back")
+		styleGlobal.Render("  Enter       confirm + prompt\n  S+Enter     force install\n  g/G         top/bottom\n  Esc/q       go back")
 
 	rightPanel := panelBorder("Info", infoContent, infoW)
 
@@ -420,6 +602,7 @@ func (m model) renderVersionPicker() string {
 func (m model) renderFooterPicker(width int) string {
 	bindings := []struct{ key, desc string }{
 		{"↑/k ↓/j", "navigate"},
+		{"g/G", "top/bottom"},
 		{"Enter", "select"},
 		{"Shift+Enter", "force install"},
 		{"Esc/q", "back"},
@@ -431,7 +614,7 @@ func (m model) renderFooterPicker(width int) string {
 	return "  " + strings.Join(parts, styleSubtitle.Render("  ·  "))
 }
 
-// ── Confirm pop-up ────────────────────────────────────────────────────────────
+// ── Confirm install pop-up ────────────────────────────────────────────────────
 
 func (m model) renderConfirm() string {
 	content := fmt.Sprintf(
@@ -448,6 +631,29 @@ func (m model) renderConfirm() string {
 	)
 
 	box := panelBorder("Confirm Install", content, 54)
+
+	topPad := (m.height - strings.Count(box, "\n") - 4) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+	return strings.Repeat("\n", topPad) + box
+}
+
+// ── Confirm delete pop-up ─────────────────────────────────────────────────────
+
+func (m model) renderConfirmDelete() string {
+	content := fmt.Sprintf(
+		"%s\n  %s\n\n%s\n  %s\n\n%s\n  %s                %s",
+		styleSubtitle.Render("tool"),
+		styleDanger.Render(m.pendingTool),
+		styleSubtitle.Render("action"),
+		styleGlobal.Render("remove from local mise.toml"),
+		styleSubtitle.Render("are you sure?"),
+		styleConfirmY.Render("[y] Yes, delete"),
+		styleConfirmN.Render("[n] Cancel"),
+	)
+
+	box := panelBorder("Confirm Delete", content, 54)
 
 	topPad := (m.height - strings.Count(box, "\n") - 4) / 2
 	if topPad < 0 {
