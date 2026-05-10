@@ -123,14 +123,6 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 
-	// Jump to top / bottom — lazygit-style.
-	case "g":
-		m.cursor = 0
-	case "G":
-		if len(m.entries) > 0 {
-			m.cursor = len(m.entries) - 1
-		}
-
 	case "enter":
 		if len(m.entries) == 0 {
 			break
@@ -245,13 +237,6 @@ func (m model) updateToolBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.loadingRegistry && m.browserCursor < len(m.filteredTools)-1 {
 			m.browserCursor++
 		}
-	case "g":
-		m.browserCursor = 0
-	case "G":
-		if len(m.filteredTools) > 0 {
-			m.browserCursor = len(m.filteredTools) - 1
-		}
-
 	case "enter":
 		if m.loadingRegistry || len(m.filteredTools) == 0 {
 			break
@@ -402,12 +387,6 @@ func (m model) updateVersionPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if !m.loadingVersions && m.versionCursor < len(m.versionList)-1 {
 			m.versionCursor++
-		}
-	case "g":
-		m.versionCursor = 0
-	case "G":
-		if !m.loadingVersions && len(m.versionList) > 0 {
-			m.versionCursor = len(m.versionList) - 1
 		}
 	case "enter":
 		if m.loadingVersions || len(m.versionList) == 0 {
